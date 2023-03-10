@@ -1,0 +1,50 @@
+services:
+  # ActiveMQ
+  amq-demo-broker:
+    image: registry.redhat.io/amq7/amq-broker-rhel8:7.10-53.1675799519
+    container_name: amq-demo-broker
+    ports:
+      # ui
+      - "8161:8161"
+      # all protocols
+      - "61616:61616"
+    volumes:
+      - ./broker/broker.xml:/opt/amq/conf/broker.xml    
+    environment:
+      AMQ_USER: "admin"
+      AMQ_PASSWORD: "admin"
+
+  # Splunk Enterprise server:
+  splunk:
+    image: splunk/splunk:latest
+    container_name: splunk
+    environment:
+      - SPLUNK_START_ARGS=--accept-license
+      - SPLUNK_HEC_TOKEN=00000000-0000-0000-0000-0000000000000
+      - SPLUNK_PASSWORD=changeme
+    ports:
+      - 18000:8000
+    healthcheck:
+      test: [ 'CMD', 'curl', '-f', 'http://localhost:8000' ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - ./splunk.yml:/tmp/defaults/default.yml
+      - /opt/splunk/var
+      - /opt/splunk/etc
+    depends_on:
+      - amq-demo-broker
+
+  # OpenTelemetry Collector
+  otelcollector:
+    image: quay.io/signalfx/splunk-otel-collector:0.71.0
+    container_name: otelcollector
+    command: ["--config=/etc/otel-collector-config.yml", "--set=service.telemetry.logs.level=debug"]
+    volumes:
+      - ./otel-collector-config.yml:/etc/otel-collector-config.yml
+      - ./logs:/logs
+      - ./checkpoint:/checkpoint
+    depends_on:
+      splunk:
+        condition: service_healthy
